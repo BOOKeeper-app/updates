@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Open BOOKeeper</title>
+  <link rel="icon" href="icon.png">
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --card: #ffffff;
+      --surface: #f9fafb;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --secondary: #059669;
+      --border: #e5e7eb;
+      --warning-bg: #fffbeb;
+      --warning-text: #92400e;
+      --shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: var(--bg);
+      font-family: Arial, "Noto Sans TC", sans-serif;
+      color: var(--text);
+      padding: 24px;
+    }
+
+    .card {
+      width: min(760px, 100%);
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      padding: 28px;
+    }
+
+    .app-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .app-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: #f3f4f6;
+      border: 1px solid var(--border);
+    }
+
+    h1,
+    h2,
+    p {
+      margin: 0;
+    }
+
+    .app-title {
+      font-size: 28px;
+      font-weight: 700;
+    }
+
+    .status {
+      margin: 0 0 22px 8px;
+      font-size: 17px;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .isbn {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      border-radius: 999px;
+      padding: 4px 12px;
+      margin-bottom: 18px;
+      background: #dbeafe;
+      color: #1d4ed8;
+      font-size: 14px;
+      font-weight: 700;
+      word-break: break-all;
+    }
+
+    .options {
+      display: grid;
+      gap: 14px;
+    }
+
+    .option {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      background: var(--surface);
+    }
+
+    .option.warning {
+      background: var(--warning-bg);
+      border-color: #fde68a;
+    }
+
+    .option h2 {
+      font-size: 17px;
+      margin-bottom: 8px;
+    }
+
+    .option p {
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .option.warning p {
+      color: var(--warning-text);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .button {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 42px;
+      padding: 10px 15px;
+      border-radius: 12px;
+      border: 0;
+      background: var(--primary);
+      color: white;
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+
+    .button:hover {
+      background: var(--primary-hover);
+    }
+
+    .button.secondary {
+      background: var(--secondary);
+    }
+
+    .button.outline {
+      background: white;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    @media (max-width: 520px) {
+      body {
+        padding: 16px;
+      }
+
+      .card {
+        padding: 20px;
+      }
+
+      .button {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="app-header">
+      <img class="app-icon" src="icon.png" alt="BOOKeeper icon" />
+      <h1 class="app-title">BOOKeeper</h1>
+    </div>
+
+    <p class="status" id="statusText">正在準備開啟 BOOKeeper...</p>
+    <div class="isbn" id="isbnBadge"></div>
+
+    <section class="options">
+      <article class="option">
+        <h2>開啟 App</h2>
+        <p>如果已安裝 BOOKeeper，會直接開啟這本書。若瀏覽器沒有自動跳轉，可以手動再試一次。</p>
+        <div class="actions">
+          <button class="button" type="button" id="openAppButton">嘗試開啟連結</button>
+        </div>
+      </article>
+
+      <article class="option warning">
+        <h2>尚未安裝</h2>
+        <p id="installHint">請先安裝 BOOKeeper，安裝完成後再回到這個連結。</p>
+        <div class="actions">
+          <a class="button secondary" href="./index.html" id="installButton">前往安裝選項</a>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const isbn = (params.get('isbn') || '').trim();
+    const statusText = document.getElementById('statusText');
+    const isbnBadge = document.getElementById('isbnBadge');
+    const openAppButton = document.getElementById('openAppButton');
+    const installHint = document.getElementById('installHint');
+    const installButton = document.getElementById('installButton');
+
+    function detectPlatform() {
+      const ua = navigator.userAgent || '';
+      if (/android/i.test(ua)) return 'Android';
+      if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS';
+      return '目前平台';
+    }
+
+    function buildOpenUrl() {
+      return `bkp-open://open?isbn=${encodeURIComponent(isbn)}`;
+    }
+
+    function tryOpenApp() {
+      if (!isbn) return;
+      window.location.href = buildOpenUrl();
+    }
+
+    if (isbn) {
+      statusText.textContent = '正在嘗試開啟 BOOKeeper。';
+      isbnBadge.textContent = `ISBN / EAN13：${isbn}`;
+      installHint.textContent = `${detectPlatform()} 可從這裡選擇 Expo、APK 或 IPA 安裝方式。`;
+      installButton.href = `./index.html?from=open-app&isbn=${encodeURIComponent(isbn)}`;
+      openAppButton.addEventListener('click', tryOpenApp);
+      window.setTimeout(tryOpenApp, 250);
+    } else {
+      statusText.textContent = '這個連結缺少 isbn 參數，無法指定要開啟的書籍。';
+      isbnBadge.textContent = '未提供 ISBN / EAN13';
+      openAppButton.disabled = true;
+      openAppButton.className = 'button outline';
+      openAppButton.textContent = '缺少 ISBN';
+    }
+  </script>
+</body>
+</html>

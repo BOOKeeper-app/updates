@@ -192,15 +192,15 @@
     <section class="options">
       <article class="option">
         <h2>開啟 App</h2>
-        <p>如果已安裝 BOOKeeper，會直接開啟這本書。若瀏覽器沒有自動跳轉，可以手動再試一次。</p>
+        <p>如果已安裝 BOOKeeper，會直接開啟頁面。若瀏覽器沒有自動跳轉，可以手動點擊開啟。</p>
         <div class="actions">
-          <button class="button" type="button" id="openAppButton">嘗試開啟連結</button>
+          <button class="button" type="button" id="openAppButton">啟動 App</button>
         </div>
       </article>
 
       <article class="option warning">
         <h2>尚未安裝</h2>
-        <p id="installHint">請先安裝 BOOKeeper，安裝完成後再回到這個連結。</p>
+        <p id="installHint">請先安裝 BOOKeeper，才可以開啟連結（Expo Go 不支援）</p>
         <div class="actions">
           <a class="button secondary" href="./index.html" id="installButton">前往安裝選項</a>
         </div>
@@ -236,7 +236,7 @@
     if (isbn) {
       statusText.textContent = '正在嘗試開啟 BOOKeeper。';
       isbnBadge.textContent = `ISBN / EAN13：${isbn}`;
-      installHint.textContent = `${detectPlatform()} 可從這裡選擇 Expo、APK 或 IPA 安裝方式。`;
+      installHint.textContent = `請先安裝 BOOKeeper，才可以開啟連結（Expo Go 不支援）`;
       installButton.href = `./index.html?from=open-app&isbn=${encodeURIComponent(isbn)}`;
       openAppButton.addEventListener('click', tryOpenApp);
       window.setTimeout(tryOpenApp, 250);

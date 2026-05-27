@@ -170,15 +170,23 @@ jobs:
             git pull --rebase origin main
 
             ANDROID_LINK=""
-            if [ -f latest_build ] && [ "$(jq -r '.version // ""' latest_build)" = "$RELEASE_VERSION" ]; then
-              ANDROID_LINK=$(jq -r '.android_link // ""' latest_build)
+            ANDROID_STORE_LINK=""
+            IOS_STORE_LINK=""
+            if [ -f latest_build ]; then
+              ANDROID_STORE_LINK=$(jq -r '.android_store_link // ""' latest_build)
+              IOS_STORE_LINK=$(jq -r '.ios_store_link // ""' latest_build)
+              if [ "$(jq -r '.version // ""' latest_build)" = "$RELEASE_VERSION" ]; then
+                ANDROID_LINK=$(jq -r '.android_link // ""' latest_build)
+              fi
             fi
 
             jq -n \
               --arg version "$RELEASE_VERSION" \
               --arg android_link "$ANDROID_LINK" \
               --arg ios_link "$IOS_LINK" \
-              '{version: $version, android_link: $android_link, ios_link: $ios_link}' > latest_build
+              --arg android_store_link "$ANDROID_STORE_LINK" \
+              --arg ios_store_link "$IOS_STORE_LINK" \
+              '{version: $version, android_link: $android_link, ios_link: $ios_link, android_store_link: $android_store_link, ios_store_link: $ios_store_link}' > latest_build
 
             git add latest_build
             if git diff --cached --quiet; then

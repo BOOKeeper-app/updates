@@ -26,16 +26,60 @@ on:
           - production
           - preview
           - development
+      update_android_minimum:
+        description: Update Android minimum version after Android build succeeds
+        type: boolean
+        required: true
+        default: false
+      update_ios_minimum:
+        description: Update iOS minimum version after iOS build succeeds
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   actions: write
-  contents: read
+  contents: write
 
 jobs:
   request-builds:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Validate inputs
+        run: |
+          if [ "${{ inputs.update_android_minimum }}" = "true" ] && [ "${{ inputs.android }}" != "true" ]; then
+            echo "update_android_minimum requires android build to be enabled."
+            exit 1
+          fi
+
+          if [ "${{ inputs.update_ios_minimum }}" = "true" ] && [ "${{ inputs.ios }}" != "true" ]; then
+            echo "update_ios_minimum requires iOS build to be enabled."
+            exit 1
+          fi
+
+      - name: Read app version
+        if: ${{ inputs.update_android_minimum || inputs.update_ios_minimum }}
+        env:
+          APP_REPO_TOKEN: ${{ secrets.RELEASE_ACTION_TOKEN }}
+          APP_REPO: yzu1103309/Bookshelf-App-React-Native
+          CODE_REF: ${{ inputs.code_ref }}
+        run: |
+          if [ -z "$APP_REPO_TOKEN" ]; then
+            echo "You must provide a RELEASE_ACTION_TOKEN secret with read access to $APP_REPO."
+            exit 1
+          fi
+
+          mkdir app-source
+          cd app-source
+          git init .
+          git remote add origin "https://x-access-token:${APP_REPO_TOKEN}@github.com/${APP_REPO}.git"
+          git fetch --depth=1 origin "$CODE_REF" \
+            || git fetch --depth=1 origin "refs/heads/$CODE_REF" \
+            || git fetch --depth=1 origin "refs/tags/$CODE_REF"
+          git checkout --detach FETCH_HEAD
+          echo "APP_VERSION=$(jq -r .expo.version app.json)" >> "$GITHUB_ENV"
+
       - name: Trigger Android build
         if: ${{ inputs.android }}
         env:
@@ -45,11 +89,35 @@ jobs:
           CODE_REF: ${{ inputs.code_ref }}
           ANDROID_PROFILE: ${{ inputs.android_profile }}
         run: |
+          REQUESTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           gh workflow run Android.yml \
             --repo "$RELEASE_REPO" \
             --ref "$RELEASE_REF" \
             -f code_ref="$CODE_REF" \
             -f profile="$ANDROID_PROFILE"
+
+          if [ "${{ inputs.update_android_minimum }}" = "true" ]; then
+            for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              RUN_ID=$(gh run list \
+                --repo "$RELEASE_REPO" \
+                --workflow Android.yml \
+                --branch "$RELEASE_REF" \
+                --event workflow_dispatch \
+                --created ">=$REQUESTED_AT" \
+                --json databaseId \
+                --jq '.[0].databaseId // empty')
+
+              if [ -n "$RUN_ID" ]; then
+                echo "ANDROID_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+                exit 0
+              fi
+
+              sleep 5
+            done
+
+            echo "Unable to find triggered Android run."
+            exit 1
+          fi
 
       - name: Trigger iOS build
         if: ${{ inputs.ios }}
@@ -59,7 +127,159 @@ jobs:
           RELEASE_REF: ${{ github.ref_name }}
           CODE_REF: ${{ inputs.code_ref }}
         run: |
+          REQUESTED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           gh workflow run iOS.yml \
             --repo "$RELEASE_REPO" \
             --ref "$RELEASE_REF" \
             -f code_ref="$CODE_REF"
+
+          if [ "${{ inputs.update_ios_minimum }}" = "true" ]; then
+            for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+              RUN_ID=$(gh run list \
+                --repo "$RELEASE_REPO" \
+                --workflow iOS.yml \
+                --branch "$RELEASE_REF" \
+                --event workflow_dispatch \
+                --created ">=$REQUESTED_AT" \
+                --json databaseId \
+                --jq '.[0].databaseId // empty')
+
+              if [ -n "$RUN_ID" ]; then
+                echo "IOS_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+                exit 0
+              fi
+
+              sleep 5
+            done
+
+            echo "Unable to find triggered iOS run."
+            exit 1
+          fi
+
+      - name: Wait for Android build
+        id: wait_android
+        if: ${{ inputs.update_android_minimum }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
+        run: gh run watch "$ANDROID_RUN_ID" --repo "$RELEASE_REPO" --exit-status --interval 30
+
+      - name: Wait for iOS build
+        id: wait_ios
+        if: ${{ inputs.update_ios_minimum }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO: ${{ github.repository }}
+        run: gh run watch "$IOS_RUN_ID" --repo "$RELEASE_REPO" --exit-status --interval 30
+
+      - name: Checkout release repo
+        if: ${{ steps.wait_android.outcome == 'success' || steps.wait_ios.outcome == 'success' }}
+        uses: actions/checkout@v5
+
+      - name: Update Android minimum version
+        id: update_android_minimum
+        if: ${{ inputs.update_android_minimum && steps.wait_android.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          RELEASE_VERSION: ${{ env.APP_VERSION }}
+          MINIMUM_FIELD: android_minimum_version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+
+            if [ ! -f minimum_version ]; then
+              jq -n \
+                --arg version "$RELEASE_VERSION" \
+                '{android_minimum_version: $version, ios_minimum_version: $version}' > minimum_version
+            fi
+
+            ANDROID_MINIMUM=$(jq -r '.android_minimum_version // .minimum_version // ""' minimum_version)
+            IOS_MINIMUM=$(jq -r '.ios_minimum_version // .minimum_version // ""' minimum_version)
+
+            if [ "$MINIMUM_FIELD" = "android_minimum_version" ]; then
+              ANDROID_MINIMUM="$RELEASE_VERSION"
+            fi
+
+            jq -n \
+              --arg android_minimum_version "$ANDROID_MINIMUM" \
+              --arg ios_minimum_version "$IOS_MINIMUM" \
+              '{android_minimum_version: $android_minimum_version, ios_minimum_version: $ios_minimum_version}' > minimum_version
+
+            git add minimum_version
+            if git diff --cached --quiet; then
+              echo "minimum_version is already up to date."
+              exit 0
+            fi
+
+            git commit -m "Update Android minimum version to $RELEASE_VERSION"
+            if git push origin main; then
+              exit 0
+            fi
+
+            git reset --soft HEAD~1
+            sleep 2
+          done
+
+          echo "Failed to push Android minimum_version after retries."
+          exit 1
+
+      - name: Update iOS minimum version
+        id: update_ios_minimum
+        if: ${{ inputs.update_ios_minimum && steps.wait_ios.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          RELEASE_VERSION: ${{ env.APP_VERSION }}
+          MINIMUM_FIELD: ios_minimum_version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          for attempt in 1 2 3; do
+            git pull --rebase origin main
+
+            if [ ! -f minimum_version ]; then
+              jq -n \
+                --arg version "$RELEASE_VERSION" \
+                '{android_minimum_version: $version, ios_minimum_version: $version}' > minimum_version
+            fi
+
+            ANDROID_MINIMUM=$(jq -r '.android_minimum_version // .minimum_version // ""' minimum_version)
+            IOS_MINIMUM=$(jq -r '.ios_minimum_version // .minimum_version // ""' minimum_version)
+
+            if [ "$MINIMUM_FIELD" = "ios_minimum_version" ]; then
+              IOS_MINIMUM="$RELEASE_VERSION"
+            fi
+
+            jq -n \
+              --arg android_minimum_version "$ANDROID_MINIMUM" \
+              --arg ios_minimum_version "$IOS_MINIMUM" \
+              '{android_minimum_version: $android_minimum_version, ios_minimum_version: $ios_minimum_version}' > minimum_version
+
+            git add minimum_version
+            if git diff --cached --quiet; then
+              echo "minimum_version is already up to date."
+              exit 0
+            fi
+
+            git commit -m "Update iOS minimum version to $RELEASE_VERSION"
+            if git push origin main; then
+              exit 0
+            fi
+
+            git reset --soft HEAD~1
+            sleep 2
+          done
+
+          echo "Failed to push iOS minimum_version after retries."
+          exit 1
+
+      - name: Fail when selected minimum build failed
+        if: ${{ (inputs.update_android_minimum && (steps.wait_android.outcome != 'success' || steps.update_android_minimum.outcome != 'success')) || (inputs.update_ios_minimum && (steps.wait_ios.outcome != 'success' || steps.update_ios_minimum.outcome != 'success')) }}
+        run: |
+          echo "At least one selected minimum-version build or update failed."
+          exit 1

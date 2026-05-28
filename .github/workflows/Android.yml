@@ -97,14 +97,8 @@ jobs:
         run: |
           eas build --local --non-interactive --output=./BOOKeeper-${APP_VERSION}.apk --platform=android --profile=${{ inputs.profile }}
 
-      - name: 📱 Upload binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: BOOKeeper-${{ env.APP_VERSION }}.apk
-          path: BOOKeeper-${{ env.APP_VERSION }}.apk
-          retention-days: 14
-
       - name: 🚀 Upload binary to release
+        id: upload_release
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_REPO: ${{ github.repository }}
@@ -123,6 +117,16 @@ jobs:
           gh release upload "$RELEASE_TAG" "$RELEASE_FILE" \
             --repo "$RELEASE_REPO" \
             --clobber
+
+          echo "uploaded=true" >> "$GITHUB_OUTPUT"
+
+      - name: 📱 Upload binary artifact
+        if: steps.upload_release.outputs.uploaded != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BOOKeeper-${{ env.APP_VERSION }}.apk
+          path: BOOKeeper-${{ env.APP_VERSION }}.apk
+          retention-days: 14
 
       - name: 🏗 Checkout release repo
         uses: actions/checkout@v5

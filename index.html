@@ -207,16 +207,20 @@
   <script>
     const APP_STORE_LINK = 'https://apps.apple.com/app/expo-go/id982107779';
     const PLAY_STORE_LINK = 'https://play.google.com/store/apps/details?id=host.exp.exponent';
-    const RELEASE_REPO = 'yzu1103309/BOOKeeper-updates';
+    const RELEASE_REPO = 'BOOKeeper-app/updates';
     const SIDESTORE_DOCS = 'https://docs.sidestore.io/';
     const LIVECONTAINER_DOCS = 'https://livecontainer.github.io/docs/intro';
 
     const state = {
       platform: detectPlatform(),
       version: '',
+      expoVersion: '',
+      buildVersion: '',
       expoUrl: '',
       ipaUrl: '',
       apkUrl: '',
+      iosStoreUrl: '',
+      androidStoreUrl: '',
     };
 
     function detectPlatform() {
@@ -232,6 +236,14 @@
 
     function disabledButton(label) {
       return `<span class="button disabled">${label}</span>`;
+    }
+
+    async function fetchJsonNoStore(path) {
+      const separator = path.includes('?') ? '&' : '?';
+      const response = await fetch(`${path}${separator}t=${Date.now()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Failed to load ${path}: ${response.status}`);
+
+      return response.json();
     }
 
     async function loadReleaseAssets(version) {
@@ -285,20 +297,26 @@
     }
 
     function renderIos() {
-      const sideloadActions = state.ipaUrl
-        ? `<button class="button secondary" type="button" id="showSideload">顯示 Sideload 選項</button>`
-        : disabledButton('尚無可下載版本');
+      const installActions = state.iosStoreUrl
+        ? buttonLink('前往商店安裝', state.iosStoreUrl, 'secondary')
+        : state.ipaUrl
+          ? `<button class="button secondary" type="button" id="showSideload">顯示 Sideload 選項</button>`
+          : disabledButton('尚無可下載版本');
+
+      const unavailableText = state.iosStoreUrl || state.ipaUrl
+        ? ''
+        : '<p class="notice">這個版本目前沒有可下載的安裝檔。</p>';
 
       document.getElementById('optionsSection').innerHTML = `
         ${renderExpoOption(APP_STORE_LINK, '安裝 Expo Go')}
         <article class="option">
           <div class="option-header">
-            <h2>安裝 IPA</h2>
+            <h2>安裝 iOS 版</h2>
             <span class="badge">進階選項</span>
           </div>
           <p>如果你熟悉 iOS Sideloading，也可以下載這個版本的 IPA。</p>
-          <div class="actions">${sideloadActions}</div>
-          ${state.ipaUrl ? '' : '<p class="notice">這個版本目前沒有可下載的安裝檔。</p>'}
+          <div class="actions">${installActions}</div>
+          ${unavailableText}
         </article>
       `;
 
@@ -326,9 +344,17 @@
     }
 
     function renderAndroid() {
-      const apkActions = state.apkUrl
-        ? buttonLink('下載 APK', state.apkUrl, 'secondary')
-        : disabledButton('尚無可下載版本');
+      const apkActions = state.androidStoreUrl
+        ? buttonLink('前往商店安裝', state.androidStoreUrl, 'secondary')
+        : state.apkUrl
+          ? buttonLink('下載 APK', state.apkUrl, 'secondary')
+          : disabledButton('尚無可下載版本');
+
+      const unavailableText = state.androidStoreUrl
+        ? ''
+        : state.apkUrl
+          ? ''
+          : '<p class="notice">這個版本目前沒有可下載的 APK。</p>';
 
       document.getElementById('optionsSection').innerHTML = `
         ${renderExpoOption(PLAY_STORE_LINK, '安裝 Expo Go')}
@@ -339,26 +365,51 @@
           </div>
           <p>如果想直接安裝 App，可以下載 APK</p>
           <div class="actions">${apkActions}</div>
-          ${state.apkUrl ? '' : '<p class="notice">這個版本目前沒有可下載的 APK。</p>'}
+          ${unavailableText}
         </article>
       `;
+    }
+
+    function getNativeVersionText() {
+      if (state.buildVersion && state.expoVersion && state.buildVersion !== state.expoVersion) {
+        return `Native build：${state.buildVersion} / Expo：${state.expoVersion}`;
+      }
+
+      return `目前版本：${state.version}`;
+    }
+
+    async function loadExpoInfo() {
+      const data = await fetchJsonNoStore('./latest_version');
+      state.expoVersion = data.version || '';
+      state.expoUrl = state.platform === 'ios' ? data.ios_link : data.android_link;
+    }
+
+    async function loadBuildInfo() {
+      const data = await fetchJsonNoStore('./latest_build');
+      state.buildVersion = data.version || '';
+      state.ipaUrl = data.ios_link || '';
+      state.apkUrl = data.android_link || '';
+      state.iosStoreUrl = data.ios_store_link || '';
+      state.androidStoreUrl = data.android_store_link || '';
+    }
+
+    async function loadFallbackBuildAssets(version) {
+      if (!version || (state.ipaUrl && state.apkUrl)) return;
+
+      const releaseAssets = await loadReleaseAssets(version);
+      if (!state.ipaUrl) state.ipaUrl = releaseAssets.ipaUrl;
+      if (!state.apkUrl) state.apkUrl = releaseAssets.apkUrl;
     }
 
     async function loadVersionInfo() {
       const versionText = document.getElementById('versionText');
 
       try {
-        const response = await fetch('./latest_version', { cache: 'no-store' });
-        if (!response.ok) throw new Error('Failed to load latest_version');
+        await Promise.all([loadExpoInfo(), loadBuildInfo()]);
+        state.version = state.buildVersion || state.expoVersion || 'unknown';
+        versionText.textContent = getNativeVersionText();
 
-        const data = await response.json();
-        state.version = data.version || 'unknown';
-        state.expoUrl = state.platform === 'ios' ? data.ios_link : data.android_link;
-        versionText.textContent = `目前版本：${state.version}`;
-
-        const releaseAssets = await loadReleaseAssets(state.version);
-        state.ipaUrl = releaseAssets.ipaUrl;
-        state.apkUrl = releaseAssets.apkUrl;
+        await loadFallbackBuildAssets(state.buildVersion || state.expoVersion);
 
         if (state.platform === 'ios') {
           renderIos();

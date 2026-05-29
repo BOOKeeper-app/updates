@@ -1,7 +1,7 @@
 {
-  "version": "0.3.9.0",
-  "android_link": "https://github.com/BOOKeeper-app/updates/releases/download/v0.3.9.0/BOOKeeper-0.3.9.0.apk",
-  "ios_link": "https://github.com/BOOKeeper-app/updates/releases/download/v0.3.9.0/BOOKeeper-0.3.9.0.ipa",
+  "version": "0.3.9.1",
+  "android_link": "",
+  "ios_link": "https://github.com/BOOKeeper-app/updates/releases/download/v0.3.9.1/BOOKeeper-0.3.9.1.ipa",
   "android_store_link": "",
   "ios_store_link": ""
 }

@@ -422,8 +422,8 @@
 
   <div class="terms-modal hidden" id="termsConsentModal" role="dialog" aria-modal="true" aria-labelledby="termsConsentTitle">
     <section class="terms-dialog">
-      <h2 id="termsConsentTitle">進入此網站，代表您同意以下條款</h2>
-      <p>請先閱讀 BOOKeeper 的隱私權政策與服務條款。繼續使用本網站代表您同意這些條款。</p>
+      <h2 id="termsConsentTitle">下載前請先確認條款</h2>
+      <p>開始下載或前往安裝連結前，請先閱讀 BOOKeeper 的隱私權政策與服務條款。按下同意並繼續後，會開始原本的下載程序。</p>
       <p class="terms-update-notice hidden" id="termsUpdateNotice">條款已有更新，請重新閱讀並同意後再繼續。</p>
 
       <div class="terms-choice-actions">
@@ -434,7 +434,7 @@
       <article class="terms-document hidden" id="termsConsentDocument"></article>
 
       <div class="terms-final-actions">
-        <a class="button back" href="https://www.google.com/">不同意並離開</a>
+        <button class="button back" type="button" id="declineTermsButton">不同意並退出</button>
         <button class="button secondary" type="button" id="agreeTermsButton">同意並繼續</button>
       </div>
     </section>
@@ -455,6 +455,7 @@
       iosStoreUrl: '',
       androidStoreUrl: '',
       termsUpdate: '',
+      pendingDownloadUrl: '',
     };
 
     function detectPlatform() {
@@ -475,6 +476,10 @@
 
     function buttonLink(label, href, className = '') {
       return `<a class="button ${className}" href="${href}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    }
+
+    function consentDownloadLink(label, href, className = '') {
+      return `<a class="button ${className}" href="${href}" data-consent-download="${href}">${label}</a>`;
     }
 
     function disabledButton(label) {
@@ -543,9 +548,9 @@
 
     function getIosInstallActions() {
       return state.iosStoreUrl
-        ? buttonLink('前往商店安裝', state.iosStoreUrl, 'secondary')
+        ? consentDownloadLink('前往商店安裝', state.iosStoreUrl, 'secondary')
         : state.ipaUrl
-          ? buttonLink('下載 IPA', state.ipaUrl, 'secondary')
+          ? consentDownloadLink('下載 IPA', state.ipaUrl, 'secondary')
           : disabledButton('尚無可下載版本');
     }
 
@@ -575,9 +580,9 @@
 
     function getAndroidInstallActions() {
       return state.androidStoreUrl
-        ? buttonLink('前往商店安裝', state.androidStoreUrl, 'secondary')
+        ? consentDownloadLink('前往商店安裝', state.androidStoreUrl, 'secondary')
         : state.apkUrl
-          ? buttonLink('下載 APK', state.apkUrl, 'secondary')
+          ? consentDownloadLink('下載 APK', state.apkUrl, 'secondary')
           : disabledButton('尚無可下載版本');
     }
 
@@ -725,14 +730,28 @@
       }
     }
 
-    async function initTermsConsent() {
+    async function ensureTermsUpdateInfo() {
+      if (state.termsUpdate) return;
       await loadTermsUpdateInfo();
+    }
+
+    function startDownload(url) {
+      if (!url) return;
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+
+    async function handleDownloadRequest(url) {
+      await ensureTermsUpdateInfo();
       const termsUpdatedAt = parseTime(state.termsUpdate);
       const acceptedAt = parseTime(getCookie(TERMS_ACCEPTED_COOKIE));
 
       if (shouldShowTermsConsent()) {
+        state.pendingDownloadUrl = url;
         openTermsConsentModal(Boolean(acceptedAt && termsUpdatedAt && acceptedAt < termsUpdatedAt));
+        return;
       }
+
+      startDownload(url);
     }
 
     async function renderDocument(documentConfig) {
@@ -765,18 +784,31 @@
     }
 
     window.addEventListener('hashchange', syncView);
+    document.addEventListener('click', (event) => {
+      const downloadLink = event.target.closest('[data-consent-download]');
+      if (!downloadLink) return;
+
+      event.preventDefault();
+      handleDownloadRequest(downloadLink.getAttribute('data-consent-download') || downloadLink.href);
+    });
     document.getElementById('showPrivacyInModal')?.addEventListener('click', () => {
       renderConsentDocument(documents['#privacy']);
     });
     document.getElementById('showTermsInModal')?.addEventListener('click', () => {
       renderConsentDocument(documents['#terms']);
     });
+    document.getElementById('declineTermsButton')?.addEventListener('click', () => {
+      state.pendingDownloadUrl = '';
+      closeTermsConsentModal();
+    });
     document.getElementById('agreeTermsButton')?.addEventListener('click', () => {
       setCookie(TERMS_ACCEPTED_COOKIE, new Date().toISOString());
       closeTermsConsentModal();
+      startDownload(state.pendingDownloadUrl);
+      state.pendingDownloadUrl = '';
     });
     loadVersionInfo();
-    initTermsConsent();
+    loadTermsUpdateInfo();
     syncView();
   </script>
 </body>
